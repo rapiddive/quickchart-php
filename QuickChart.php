@@ -14,6 +14,9 @@ class QuickChart {
   public $backgroundColor;
   public $apiKey;
   public $version;
+  public $authUsername;
+  public $authPassword;
+  public $bearerToken;
 
   const USER_AGENT = 'quickchart-php (1.0.0)';
 
@@ -29,6 +32,9 @@ class QuickChart {
     $this->backgroundColor = isset($options['backgroundColor']) ? $options['backgroundColor'] : 'transparent';
     $this->apiKey = isset($options['apiKey']) ? $options['apiKey'] : null;
     $this->version = isset($options['version']) ? $options['version'] : null;
+    $this->authUsername = isset($options['authUsername']) ? $options['authUsername'] : null;
+    $this->authPassword = isset($options['authPassword']) ? $options['authPassword'] : null;
+    $this->bearerToken = isset($options['bearerToken']) ? $options['bearerToken'] : null;
   }
 
   function setConfig($chartjsConfig) {
@@ -63,6 +69,26 @@ class QuickChart {
     $this->version = $version;
   }
 
+  function setBasicAuth($username, $password) {
+    $this->authUsername = $username;
+    $this->authPassword = $password;
+    // Clear bearer token when using basic auth
+    $this->bearerToken = null;
+  }
+
+  function setBearerToken($token) {
+    $this->bearerToken = $token;
+    // Clear basic auth when using bearer token
+    $this->authUsername = null;
+    $this->authPassword = null;
+  }
+
+  function clearAuth() {
+    $this->authUsername = null;
+    $this->authPassword = null;
+    $this->bearerToken = null;
+  }
+
   function getConfigStr() {
     if (is_array($this->config)) {
       return json_encode($this->config);
@@ -70,22 +96,37 @@ class QuickChart {
     return $this->config;
   }
 
-  function getUrl() {
-    $configStr = urlencode($this->getConfigStr());
-    $width = $this->width;
-    $height = $this->height;
-    $devicePixelRatio = number_format($this->devicePixelRatio, 1);
-    $format = $this->format;
-    $backgroundColor = $this->backgroundColor;
+  protected function buildAuthHeaders($additionalHeaders = array()) {
+    $headers = $additionalHeaders;
+    
+    if ($this->bearerToken) {
+      $headers[] = 'Authorization: Bearer ' . $this->bearerToken;
+    } elseif ($this->authUsername && $this->authPassword) {
+      $credentials = base64_encode($this->authUsername . ':' . $this->authPassword);
+      $headers[] = 'Authorization: Basic ' . $credentials;
+    }
+    
+    return $headers;
+  }
 
-    $url = sprintf($this->getRootEndpoint() . '/chart?ref=qc-php&c=%s&w=%d&h=%d&devicePixelRatio=%f&format=%s&bkg=%s', $configStr, $width, $height, $devicePixelRatio, $format, $backgroundColor);
+  function getUrl() {
+    $url = sprintf(
+      '%s/chart?ref=qc-php&c=%s&w=%d&h=%d&devicePixelRatio=%s&format=%s&bkg=%s',
+      $this->getRootEndpoint(),
+      urlencode($this->getConfigStr()),
+      $this->width,
+      $this->height,
+      number_format($this->devicePixelRatio, 1),
+      urlencode($this->format),
+      urlencode($this->backgroundColor)
+    );
 
     if ($this->apiKey) {
-      $url .= '&key=' . $this->apiKey;
+      $url .= '&key=' . urlencode($this->apiKey);
     }
 
     if ($this->version) {
-      $url .= '&v=' . $this->version;
+      $url .= '&v=' . urlencode($this->version);
     }
 
     return $url;
@@ -111,20 +152,32 @@ class QuickChart {
       $postData['version'] = $this->version;
     }
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-      'Content-Type:application/json',
-      "User-Agent:" . QuickChart::USER_AGENT,
+    $headers = $this->buildAuthHeaders(array(
+      'Content-Type: application/json',
+      'User-Agent: ' . QuickChart::USER_AGENT,
     ));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     $result = curl_exec($ch);
+    $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
     if ($result === false) {
-      throw new Exception(curl_error($ch), curl_errno($ch));
+      $error = curl_error($ch);
+      curl_close($ch);
+      throw new Exception("Curl error: $error");
     }
 
     curl_close($ch);
+
+    if ($httpStatusCode < 200 || $httpStatusCode >= 300) {
+      throw new Exception("QuickChart API returned error with status code $httpStatusCode");
+    }
+
     // Note: do not dereference json_decode directly for 5.3 compatibility.
     $ret = json_decode($result, true);
+    if (!isset($ret['url'])) {
+      throw new Exception('QuickChart API response did not include a URL');
+    }
     return $ret['url'];
   }
 
@@ -147,7 +200,8 @@ class QuickChart {
 
     $responseHeaders = [];
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type:application/json'));
+    $headers = $this->buildAuthHeaders(array('Content-Type:application/json'));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$responseHeaders) {
       $len = strlen($header);
       $header = explode(':', $header, 2);
@@ -163,6 +217,7 @@ class QuickChart {
 
     if ($result === false) {
       $error = curl_error($ch);
+      curl_close($ch);
       throw new Exception("Curl error: $error");
     }
 

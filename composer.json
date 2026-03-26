@@ -1,10 +1,10 @@
 {
-  "name": "ianw/quickchart",
+  "name": "rapiddive/quickchart",
   "description": "QuickChart chart API",
   "keywords": [
     "chart", "charts", "image", "bar-chart", "line-chart", "chart-api"
   ],
-  "homepage": "http://github.com/typpo/quickchart-php",
+  "homepage": "https://github.com/rapiddive/quickchart-php",
   "license": "MIT",
   "authors": [{
     "name": "Ian Webster",
