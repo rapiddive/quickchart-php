@@ -79,6 +79,12 @@ The Chart.js version to use.  See [documentation](https://quickchart.io/document
 ### apiKey: string
 Your QuickChart API key, if you have one.
 
+### connectTimeout: int
+Seconds to wait while trying to connect to the API before giving up. Defaults to **10**. Set to `0` to wait indefinitely (not recommended).
+
+### timeout: int
+Maximum seconds to wait for the entire request (connect + transfer). Defaults to **30**. Set to `0` to wait indefinitely.
+
 ## Setting properties
 
 Each option above has an associated function call that you can invoke on your `QuickChart` object:
@@ -91,6 +97,8 @@ Each option above has an associated function call that you can invoke on your `Q
  - `setDevicePixelRatio($devicePixelRatio)`
  - `setVersion($version)`
  - `setApiKey($apiKey)`
+ - `setConnectTimeout($seconds)`
+ - `setTimeout($seconds)`
 
 ## Getting URLs
 

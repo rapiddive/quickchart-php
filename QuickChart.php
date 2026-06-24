@@ -18,6 +18,12 @@ class QuickChart {
   public $authPassword;
   public $bearerToken;
 
+  public $connectTimeout;
+  public $timeout;
+
+  private $_cachedConfigStr = null;
+  private $_curlShare = null;
+
   const USER_AGENT = 'quickchart-php (1.0.0)';
 
   function __construct($options = array()) {
@@ -35,10 +41,24 @@ class QuickChart {
     $this->authUsername = isset($options['authUsername']) ? $options['authUsername'] : null;
     $this->authPassword = isset($options['authPassword']) ? $options['authPassword'] : null;
     $this->bearerToken = isset($options['bearerToken']) ? $options['bearerToken'] : null;
+    $this->connectTimeout = isset($options['connectTimeout']) ? (int)$options['connectTimeout'] : 10;
+    $this->timeout        = isset($options['timeout'])        ? (int)$options['timeout']        : 30;
+
+    $this->_curlShare = curl_share_init();
+    curl_share_setopt($this->_curlShare, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+    curl_share_setopt($this->_curlShare, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+  }
+
+  function __destruct() {
+    if ($this->_curlShare !== null) {
+      curl_share_close($this->_curlShare);
+      $this->_curlShare = null;
+    }
   }
 
   function setConfig($chartjsConfig) {
     $this->config = $chartjsConfig;
+    $this->_cachedConfigStr = null;
   }
 
   function setWidth($width) {
@@ -89,9 +109,20 @@ class QuickChart {
     $this->bearerToken = null;
   }
 
+  function setConnectTimeout($seconds) {
+    $this->connectTimeout = (int)$seconds;
+  }
+
+  function setTimeout($seconds) {
+    $this->timeout = (int)$seconds;
+  }
+
   function getConfigStr() {
     if (is_array($this->config)) {
-      return json_encode($this->config);
+      if ($this->_cachedConfigStr === null) {
+        $this->_cachedConfigStr = json_encode($this->config);
+      }
+      return $this->_cachedConfigStr;
     }
     return $this->config;
   }
@@ -137,6 +168,9 @@ class QuickChart {
       throw new Exception('Short URLs must use quickchart.io host');
     }
     $ch = curl_init($this->getRootEndpoint() . '/chart/create');
+    curl_setopt($ch, CURLOPT_SHARE, $this->_curlShare);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
     $postData = array(
       'backgroundColor' => $this->backgroundColor,
       'width' => $this->width,
@@ -152,6 +186,10 @@ class QuickChart {
       $postData['version'] = $this->version;
     }
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+    curl_setopt($ch, CURLOPT_ENCODING, '');
+    if (defined('CURL_HTTP_VERSION_2_0')) {
+      curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    }
     $headers = $this->buildAuthHeaders(array(
       'Content-Type: application/json',
       'User-Agent: ' . QuickChart::USER_AGENT,
@@ -183,6 +221,9 @@ class QuickChart {
 
   function toBinary() {
     $ch = curl_init($this->getRootEndpoint() . '/chart');
+    curl_setopt($ch, CURLOPT_SHARE, $this->_curlShare);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
     $postData = array(
       'backgroundColor' => $this->backgroundColor,
       'devicePixelRatio' => $this->devicePixelRatio,
@@ -200,6 +241,10 @@ class QuickChart {
 
     $responseHeaders = [];
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+    curl_setopt($ch, CURLOPT_ENCODING, '');
+    if (defined('CURL_HTTP_VERSION_2_0')) {
+      curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    }
     $headers = $this->buildAuthHeaders(array('Content-Type:application/json'));
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$responseHeaders) {
