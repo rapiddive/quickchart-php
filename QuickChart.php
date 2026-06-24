@@ -51,7 +51,10 @@ class QuickChart {
 
   function __destruct() {
     if ($this->_curlShare !== null) {
-      curl_share_close($this->_curlShare);
+      // curl_share_close() is a no-op since PHP 8.0 and deprecated in PHP 8.5
+      if (PHP_MAJOR_VERSION < 8) {
+        curl_share_close($this->_curlShare);
+      }
       $this->_curlShare = null;
     }
   }
